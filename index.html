@@ -1,0 +1,811 @@
+import React, { useState, useEffect } from 'react';
+import { Plus, TrendingUp, Share2, Upload, Download, Calendar, Clock, MapPin, Heart, Trophy } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+
+const RunningTracker = () => {
+  const [runs, setRuns] = useState([]);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [trainingStartDate, setTrainingStartDate] = useState(
+    localStorage.getItem('trainingStartDate') || new Date().toISOString().split('T')[0]
+  );
+  const [newRun, setNewRun] = useState({
+    date: new Date().toISOString().split('T')[0],
+    distance: '',
+    time: '',
+    feeling: 5,
+    notes: '',
+    route: '',
+    workoutType: 'Easy Run'
+  });
+
+  // Training plan data
+  const trainingPlan = [
+    { week: 1, phase: 'Base', tue: 3, thu: 3, sat: 2.0, weeklyTotal: 8.0 },
+    { week: 2, phase: 'Base', tue: 3, thu: 3, sat: 2.5, weeklyTotal: 8.5 },
+    { week: 3, phase: 'Base', tue: 3, thu: 3, sat: 3.0, weeklyTotal: 9.0 },
+    { week: 4, phase: 'Base', tue: 3, thu: 3, sat: 3.5, weeklyTotal: 9.5 },
+    { week: 5, phase: 'Threshold', tue: 3.5, thu: 3.5, sat: 6.0, weeklyTotal: 13.0 },
+    { week: 6, phase: 'Threshold', tue: 3.5, thu: 3.5, sat: 6.5, weeklyTotal: 13.5 },
+    { week: 7, phase: 'Threshold', tue: 3.5, thu: 3.5, sat: 7.0, weeklyTotal: 14.0 },
+    { week: 8, phase: 'Threshold', tue: 3.5, thu: 3.5, sat: 7.5, weeklyTotal: 14.5 },
+    { week: 9, phase: 'Speed', tue: 4, thu: 4.5, sat: 9.0, weeklyTotal: 17.5 },
+    { week: 10, phase: 'Speed', tue: 4, thu: 4.5, sat: 9.5, weeklyTotal: 18.0 },
+    { week: 11, phase: 'Speed', tue: 4, thu: 4.5, sat: 10.0, weeklyTotal: 18.5 },
+    { week: 12, phase: 'Taper', tue: 3, thu: 2.5, sat: 6.0, weeklyTotal: 11.5 },
+    { week: 13, phase: 'Taper', tue: 3, thu: 2.5, sat: 5.0, weeklyTotal: 10.5 },
+    { week: 14, phase: 'Taper', tue: 3, thu: 2.5, sat: 4.0, weeklyTotal: 9.5 },
+    { week: 15, phase: 'Taper', tue: 3, thu: 2.5, sat: 3.0, weeklyTotal: 8.5 },
+    { week: 16, phase: 'Taper', tue: 3, thu: 2.5, sat: 3.0, weeklyTotal: 8.5 },
+    { week: 17, phase: 'Taper', tue: 3, thu: 2.5, sat: 3.0, weeklyTotal: 8.5 }
+  ];
+
+  // Load runs from localStorage on component mount
+  useEffect(() => {
+    const savedRuns = localStorage.getItem('runningData');
+    if (savedRuns) {
+      setRuns(JSON.parse(savedRuns));
+    }
+  }, []);
+
+  // Save runs to localStorage whenever runs change
+  useEffect(() => {
+    localStorage.setItem('runningData', JSON.stringify(runs));
+  }, [runs]);
+
+  // Save training start date to localStorage
+  useEffect(() => {
+    localStorage.setItem('trainingStartDate', trainingStartDate);
+  }, [trainingStartDate]);
+
+  const getCurrentTrainingWeek = () => {
+    const startDate = new Date(trainingStartDate);
+    const today = new Date();
+    const diffTime = today - startDate;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const currentWeek = Math.max(1, Math.ceil(diffDays / 7));
+    return Math.min(currentWeek, 17); // Cap at week 17
+  };
+
+  const getWeekStart = (weekNumber) => {
+    const startDate = new Date(trainingStartDate);
+    const weekStart = new Date(startDate);
+    weekStart.setDate(startDate.getDate() + (weekNumber - 1) * 7);
+    return weekStart;
+  };
+
+  const getWeekEnd = (weekNumber) => {
+    const weekStart = getWeekStart(weekNumber);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    return weekEnd;
+  };
+
+  const getWeeklyProgress = (weekNumber) => {
+    const weekStart = getWeekStart(weekNumber);
+    const weekEnd = getWeekEnd(weekNumber);
+    
+    const weekRuns = runs.filter(run => {
+      const runDate = new Date(run.date);
+      return runDate >= weekStart && runDate <= weekEnd;
+    });
+    
+    const actualMiles = weekRuns.reduce((sum, run) => sum + run.distance, 0);
+    const plannedWeek = trainingPlan.find(w => w.week === weekNumber);
+    const targetMiles = plannedWeek ? plannedWeek.weeklyTotal : 0;
+    
+    return {
+      actual: actualMiles,
+      target: targetMiles,
+      percentage: targetMiles > 0 ? (actualMiles / targetMiles) * 100 : 0,
+      runs: weekRuns.length
+    };
+  };
+
+  const calculatePace = (distance, timeStr) => {
+    if (!distance || !timeStr) return null;
+    const [minutes, seconds] = timeStr.split(':').map(Number);
+    const totalMinutes = minutes + (seconds || 0) / 60;
+    const paceMinutes = totalMinutes / parseFloat(distance);
+    const paceMin = Math.floor(paceMinutes);
+    const paceSec = Math.round((paceMinutes - paceMin) * 60);
+    return `${paceMin}:${paceSec.toString().padStart(2, '0')}`;
+  };
+
+  const addRun = () => {
+    if (!newRun.distance || !newRun.time) return;
+    
+    const pace = calculatePace(newRun.distance, newRun.time);
+    const runData = {
+      id: Date.now(),
+      ...newRun,
+      distance: parseFloat(newRun.distance),
+      pace
+    };
+    
+    setRuns([...runs, runData].sort((a, b) => new Date(a.date) - new Date(b.date)));
+    setNewRun({
+      date: new Date().toISOString().split('T')[0],
+      distance: '',
+      time: '',
+      feeling: 5,
+      notes: '',
+      route: '',
+      workoutType: 'Easy Run'
+    });
+    setShowAddForm(false);
+  };
+
+  const exportData = () => {
+    const dataStr = JSON.stringify(runs, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'running-data.json';
+    link.click();
+  };
+
+  const importData = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const importedRuns = JSON.parse(e.target.result);
+          setRuns(importedRuns.sort((a, b) => new Date(a.date) - new Date(b.date)));
+        } catch (error) {
+          alert('Error importing data. Please check the file format.');
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const generateShareableData = () => {
+    const shareData = {
+      totalRuns: runs.length,
+      totalDistance: runs.reduce((sum, run) => sum + run.distance, 0).toFixed(1),
+      avgPace: runs.length > 0 ? calculateAvgPace() : 'N/A',
+      recentRuns: runs.slice(-5),
+      weeklyMileage: getWeeklyMileage()
+    };
+    
+    const shareText = `🏃‍♀️ My Half Marathon Training Progress 🏃‍♂️
+    
+📊 Stats:
+• Total Runs: ${shareData.totalRuns}
+• Total Distance: ${shareData.totalDistance} miles
+• Average Pace: ${shareData.avgPace}/mile
+• This Week: ${shareData.weeklyMileage} miles
+
+Recent runs: ${shareData.recentRuns.map(run => 
+  `${run.date}: ${run.distance}mi in ${run.time}`
+).join('\n')}
+
+#HalfMarathonTraining #Running`;
+
+    if (navigator.share) {
+      navigator.share({
+        title: 'My Running Progress',
+        text: shareText
+      });
+    } else {
+      navigator.clipboard.writeText(shareText);
+      alert('Progress copied to clipboard!');
+    }
+  };
+
+  const calculateAvgPace = () => {
+    if (runs.length === 0) return 'N/A';
+    let totalMinutes = 0;
+    let totalDistance = 0;
+    
+    runs.forEach(run => {
+      const [min, sec] = run.time.split(':').map(Number);
+      totalMinutes += min + (sec || 0) / 60;
+      totalDistance += run.distance;
+    });
+    
+    const avgPaceMin = totalMinutes / totalDistance;
+    const paceMin = Math.floor(avgPaceMin);
+    const paceSec = Math.round((avgPaceMin - paceMin) * 60);
+    return `${paceMin}:${paceSec.toString().padStart(2, '0')}`;
+  };
+
+  const getWeeklyMileage = () => {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    return runs
+      .filter(run => new Date(run.date) >= oneWeekAgo)
+      .reduce((sum, run) => sum + run.distance, 0)
+      .toFixed(1);
+  };
+
+  const getChartData = () => {
+    return runs.map(run => ({
+      date: new Date(run.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      distance: run.distance,
+      pace: run.pace ? parseFloat(run.pace.split(':')[0]) + parseFloat(run.pace.split(':')[1]) / 60 : 0
+    }));
+  };
+
+  const getWeeklyData = () => {
+    const weeks = {};
+    runs.forEach(run => {
+      const weekStart = new Date(run.date);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      const weekKey = weekStart.toISOString().split('T')[0];
+      
+      if (!weeks[weekKey]) {
+        weeks[weekKey] = { week: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), miles: 0 };
+      }
+      weeks[weekKey].miles += run.distance;
+    });
+    
+    return Object.values(weeks).slice(-8);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="max-w-md mx-auto bg-white min-h-screen shadow-lg">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4">
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Trophy className="w-6 h-6" />
+            Half Marathon Tracker
+          </h1>
+          <p className="text-blue-100 text-sm">Training for greatness! 🏃‍♀️</p>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex bg-white border-b">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex-1 py-3 px-3 text-sm font-medium ${
+              activeTab === 'dashboard' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'
+            }`}
+          >
+            Dashboard
+          </button>
+          <button
+            onClick={() => setActiveTab('plan')}
+            className={`flex-1 py-3 px-3 text-sm font-medium ${
+              activeTab === 'plan' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'
+            }`}
+          >
+            Training Plan
+          </button>
+          <button
+            onClick={() => setActiveTab('runs')}
+            className={`flex-1 py-3 px-3 text-sm font-medium ${
+              activeTab === 'runs' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'
+            }`}
+          >
+            My Runs
+          </button>
+          <button
+            onClick={() => setActiveTab('progress')}
+            className={`flex-1 py-3 px-3 text-sm font-medium ${
+              activeTab === 'progress' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'
+            }`}
+          >
+            Progress
+          </button>
+        </div>
+
+        <div className="p-4">
+          {/* Dashboard Tab */}
+          {activeTab === 'dashboard' && (
+            <div className="space-y-4">
+              {/* Current Week Status */}
+              <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-4 rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <div>
+                    <div className="text-sm opacity-90">Training Week</div>
+                    <div className="text-2xl font-bold">
+                      {getCurrentTrainingWeek()} of 17
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm opacity-90">Phase</div>
+                    <div className="text-lg font-semibold">
+                      {trainingPlan.find(w => w.week === getCurrentTrainingWeek())?.phase || 'Base'}
+                    </div>
+                  </div>
+                </div>
+                
+                {(() => {
+                  const currentWeek = getCurrentTrainingWeek();
+                  const progress = getWeeklyProgress(currentWeek);
+                  return (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>This Week: {progress.actual.toFixed(1)} / {progress.target} miles</span>
+                        <span>{Math.round(progress.percentage)}%</span>
+                      </div>
+                      <div className="bg-white bg-opacity-20 rounded-full h-2">
+                        <div 
+                          className="bg-white h-2 rounded-full transition-all duration-300" 
+                          style={{ width: `${Math.min(100, progress.percentage)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Quick Stats */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-green-400 to-green-500 text-white p-4 rounded-lg">
+                  <div className="text-2xl font-bold">{runs.length}</div>
+                  <div className="text-sm opacity-90">Total Runs</div>
+                </div>
+                <div className="bg-gradient-to-br from-purple-400 to-purple-500 text-white p-4 rounded-lg">
+                  <div className="text-2xl font-bold">
+                    {runs.reduce((sum, run) => sum + run.distance, 0).toFixed(1)}
+                  </div>
+                  <div className="text-sm opacity-90">Miles</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-orange-400 to-orange-500 text-white p-4 rounded-lg">
+                  <div className="text-lg font-bold">{calculateAvgPace()}</div>
+                  <div className="text-sm opacity-90">Avg Pace</div>
+                </div>
+                <div className="bg-gradient-to-br from-pink-400 to-pink-500 text-white p-4 rounded-lg">
+                  <div className="text-lg font-bold">{getWeeklyMileage()}</div>
+                  <div className="text-sm opacity-90">This Week</div>
+                </div>
+              </div>
+
+              {/* Recent Runs */}
+              <div className="bg-white rounded-lg border p-4">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Recent Runs
+                </h3>
+                {runs.slice(-3).reverse().map(run => (
+                  <div key={run.id} className="flex justify-between items-center py-2 border-b last:border-b-0">
+                    <div>
+                      <div className="font-medium">{run.distance} miles</div>
+                      <div className="text-sm text-gray-500">{new Date(run.date).toLocaleDateString()}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium text-blue-600">{run.time}</div>
+                      <div className="text-sm text-gray-500">{run.pace}/mi</div>
+                    </div>
+                  </div>
+                ))}
+                {runs.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">No runs logged yet!</p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setShowAddForm(true)}
+                  className="bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 active:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Run
+                </button>
+                <button
+                  onClick={generateShareableData}
+                  className="bg-green-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 active:bg-green-700"
+                >
+                  <Share2 className="w-4 h-4" />
+                  Share Progress
+                </button>
+              </div>
+
+              {/* Import/Export */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 cursor-pointer active:bg-gray-200">
+                  <Upload className="w-4 h-4" />
+                  Import Data
+                  <input type="file" accept=".json" onChange={importData} className="hidden" />
+                </label>
+                <button
+                  onClick={exportData}
+                  className="bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 active:bg-gray-200"
+                >
+                  <Download className="w-4 h-4" />
+                  Export Data
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Training Plan Tab */}
+          {activeTab === 'plan' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold">17-Week Training Plan</h2>
+                <div className="text-sm text-gray-500">
+                  Week {getCurrentTrainingWeek()}
+                </div>
+              </div>
+
+              {/* Training Start Date Setting */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <label className="block text-sm font-medium mb-1">Training Start Date</label>
+                <input
+                  type="date"
+                  value={trainingStartDate}
+                  onChange={(e) => setTrainingStartDate(e.target.value)}
+                  className="w-full p-2 border rounded text-sm"
+                />
+                <div className="text-xs text-gray-600 mt-1">
+                  Current week: {getCurrentTrainingWeek()} of 17
+                </div>
+              </div>
+
+              {/* Weekly Plan Cards */}
+              <div className="space-y-3">
+                {trainingPlan.map(week => {
+                  const isCurrentWeek = week.week === getCurrentTrainingWeek();
+                  const progress = getWeeklyProgress(week.week);
+                  const weekStart = getWeekStart(week.week);
+                  const weekEnd = getWeekEnd(week.week);
+                  
+                  return (
+                    <div 
+                      key={week.week} 
+                      className={`border rounded-lg p-4 ${
+                        isCurrentWeek 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-gray-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">Week {week.week}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              week.phase === 'Base' ? 'bg-green-100 text-green-700' :
+                              week.phase === 'Threshold' ? 'bg-yellow-100 text-yellow-700' :
+                              week.phase === 'Speed' ? 'bg-red-100 text-red-700' :
+                              'bg-blue-100 text-blue-700'
+                            }`}>
+                              {week.phase}
+                            </span>
+                            {isCurrentWeek && (
+                              <span className="text-xs px-2 py-1 rounded-full bg-blue-500 text-white">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold">{week.weeklyTotal} miles</div>
+                          {progress.actual > 0 && (
+                            <div className="text-sm text-gray-600">
+                              {progress.actual.toFixed(1)} completed
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Weekly Progress Bar */}
+                      {progress.actual > 0 && (
+                        <div className="mb-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span>Progress</span>
+                            <span>{Math.round(progress.percentage)}%</span>
+                          </div>
+                          <div className="bg-gray-200 rounded-full h-1.5">
+                            <div 
+                              className={`h-1.5 rounded-full transition-all duration-300 ${
+                                progress.percentage >= 100 ? 'bg-green-500' :
+                                progress.percentage >= 80 ? 'bg-yellow-500' : 'bg-blue-500'
+                              }`}
+                              style={{ width: `${Math.min(100, progress.percentage)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Key Workouts */}
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="text-center p-2 bg-gray-50 rounded">
+                          <div className="font-medium">Tue</div>
+                          <div>{week.tue} mi</div>
+                        </div>
+                        <div className="text-center p-2 bg-gray-50 rounded">
+                          <div className="font-medium">Thu</div>
+                          <div>{week.thu} mi</div>
+                        </div>
+                        <div className="text-center p-2 bg-blue-100 rounded">
+                          <div className="font-medium">Sat (Long)</div>
+                          <div>{week.sat} mi</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* My Runs Tab */}
+          {activeTab === 'runs' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold">All Runs</h2>
+                <button
+                  onClick={() => setShowAddForm(true)}
+                  className="bg-blue-600 text-white p-2 rounded-lg active:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {runs.slice().reverse().map(run => (
+                  <div key={run.id} className="bg-white border rounded-lg p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <div className="font-semibold text-lg">{run.distance} miles</div>
+                        <div className="text-sm text-gray-500 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(run.date).toLocaleDateString('en-US', { 
+                            weekday: 'short', 
+                            month: 'short', 
+                            day: 'numeric' 
+                          })}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-blue-600">{run.time}</div>
+                        <div className="text-sm text-gray-500">{run.pace}/mile</div>
+                      </div>
+                    </div>
+                    
+                    {run.route && (
+                      <div className="text-sm text-gray-600 flex items-center gap-1 mb-1">
+                        <MapPin className="w-3 h-3" />
+                        {run.route}
+                      </div>
+                    )}
+                    
+                    {run.workoutType && (
+                      <div className="text-sm mb-1">
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          run.workoutType === 'Long Run' ? 'bg-blue-100 text-blue-700' :
+                          run.workoutType === 'Tempo Run' ? 'bg-yellow-100 text-yellow-700' :
+                          run.workoutType === 'Interval Run' ? 'bg-red-100 text-red-700' :
+                          run.workoutType === 'Race Pace' ? 'bg-purple-100 text-purple-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {run.workoutType}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center gap-2 mb-2">
+                      <Heart className="w-3 h-3 text-red-500" />
+                      <div className="text-sm text-gray-600">
+                        Feeling: {run.feeling}/10
+                      </div>
+                    </div>
+                    
+                    {run.notes && (
+                      <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                        {run.notes}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {runs.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Trophy className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No runs logged yet!</p>
+                    <p className="text-sm">Add your first run to get started.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Progress Tab */}
+          {activeTab === 'progress' && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-semibold">Training Progress</h2>
+              
+              {runs.length > 0 ? (
+                <>
+                  {/* Distance Over Time */}
+                  <div className="bg-white border rounded-lg p-4">
+                    <h3 className="font-medium mb-3">Distance Trend</h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={getChartData()}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" fontSize={12} />
+                        <YAxis fontSize={12} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="distance" stroke="#3B82F6" strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Weekly Mileage */}
+                  <div className="bg-white border rounded-lg p-4">
+                    <h3 className="font-medium mb-3">Weekly Mileage</h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={getWeeklyData()}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="week" fontSize={12} />
+                        <YAxis fontSize={12} />
+                        <Tooltip />
+                        <Bar dataKey="miles" fill="#10B981" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Goal Progress */}
+                  <div className="bg-white border rounded-lg p-4">
+                    <h3 className="font-medium mb-3">Half Marathon Readiness</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span>Longest Run</span>
+                          <span>{Math.max(...runs.map(r => r.distance)).toFixed(1)} / 13.1 miles</span>
+                        </div>
+                        <div className="bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full" 
+                            style={{ width: `${Math.min(100, (Math.max(...runs.map(r => r.distance)) / 13.1) * 100)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span>Total Miles</span>
+                          <span>{runs.reduce((sum, run) => sum + run.distance, 0).toFixed(1)} miles</span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {runs.length} runs completed
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Start logging runs to see your progress!</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Add Run Modal */}
+        {showAddForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end z-50">
+            <div className="bg-white w-full rounded-t-xl p-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Log New Run</h3>
+                <button
+                  onClick={() => setShowAddForm(false)}
+                  className="text-gray-500 p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={newRun.date}
+                    onChange={(e) => setNewRun({...newRun, date: e.target.value})}
+                    className="w-full p-3 border rounded-lg text-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Workout Type</label>
+                  <select
+                    value={newRun.workoutType}
+                    onChange={(e) => setNewRun({...newRun, workoutType: e.target.value})}
+                    className="w-full p-3 border rounded-lg text-lg"
+                  >
+                    <option value="Easy Run">Easy Run</option>
+                    <option value="Long Run">Long Run</option>
+                    <option value="Tempo Run">Tempo Run</option>
+                    <option value="Interval Run">Interval Run</option>
+                    <option value="Race Pace">Race Pace</option>
+                    <option value="Recovery Run">Recovery Run</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Distance (miles)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="0.0"
+                      value={newRun.distance}
+                      onChange={(e) => setNewRun({...newRun, distance: e.target.value})}
+                      className="w-full p-3 border rounded-lg text-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Time (mm:ss)</label>
+                    <input
+                      type="text"
+                      placeholder="30:00"
+                      value={newRun.time}
+                      onChange={(e) => setNewRun({...newRun, time: e.target.value})}
+                      className="w-full p-3 border rounded-lg text-lg"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Route/Location</label>
+                  <input
+                    type="text"
+                    placeholder="Central Park, Neighborhood loop..."
+                    value={newRun.route}
+                    onChange={(e) => setNewRun({...newRun, route: e.target.value})}
+                    className="w-full p-3 border rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">How did you feel? ({newRun.feeling}/10)</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={newRun.feeling}
+                    onChange={(e) => setNewRun({...newRun, feeling: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Terrible</span>
+                    <span>Amazing</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notes</label>
+                  <textarea
+                    placeholder="Weather, how you felt, observations..."
+                    value={newRun.notes}
+                    onChange={(e) => setNewRun({...newRun, notes: e.target.value})}
+                    className="w-full p-3 border rounded-lg resize-none"
+                    rows="3"
+                  ></textarea>
+                </div>
+
+                <button
+                  onClick={addRun}
+                  disabled={!newRun.distance || !newRun.time}
+                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium disabled:bg-gray-300 disabled:cursor-not-allowed active:bg-blue-700"
+                >
+                  Add Run
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default RunningTracker;
